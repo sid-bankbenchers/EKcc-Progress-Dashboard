@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+from pathlib import Path
 from datetime import date
 
 st.set_page_config(
@@ -112,6 +113,18 @@ def load_mis(file_bytes):
             ).fillna(0)
     return df
 
+# ── Default bundled sample data ─────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def load_default_datasets():
+    base = Path(__file__).parent
+    bank_path = base / "sample_bank_details.csv"
+    mis_path = base / "sample_mis_data.csv"
+    if not bank_path.exists() or not mis_path.exists():
+        return None, None
+    bank_df = load_bank_details(bank_path.read_bytes())
+    mis_df = load_mis(mis_path.read_bytes())
+    return bank_df, mis_df
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "bank_df" not in st.session_state:
     st.session_state.bank_df = None
@@ -121,6 +134,7 @@ if "mis_df" not in st.session_state:
 # ── Sidebar — UPLOAD ONLY ─────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Upload Data Files")
+    st.markdown("Upload your own Bank and MIS CSV files, or leave both blank to use the bundled sample dataset.")
     bank_file = st.file_uploader("Bank User Details (CSV)", type=["csv"], key="bank_upload")
     mis_file  = st.file_uploader("MIS Loan Data (CSV)",     type=["csv"], key="mis_upload")
 
@@ -154,6 +168,15 @@ with st.sidebar:
 
 bank_df = st.session_state.bank_df
 mis_df  = st.session_state.mis_df
+
+if bank_df is None and mis_df is None:
+    default_bank_df, default_mis_df = load_default_datasets()
+    if default_bank_df is not None and default_mis_df is not None:
+        bank_df = default_bank_df
+        mis_df = default_mis_df
+        st.session_state.bank_df = bank_df
+        st.session_state.mis_df = mis_df
+        st.info("Loaded bundled sample dataset. Upload your own CSVs in the sidebar to replace it.")
 
 # ── UPLOAD SCREEN ─────────────────────────────────────────────────────────────
 if bank_df is None or mis_df is None:

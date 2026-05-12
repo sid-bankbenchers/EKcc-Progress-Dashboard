@@ -1,0 +1,3 @@
+Loan Number,Product Type,Bank Type,Bank Name,Parent Office,Branch Name,PACS Name,State,Total Loan Amount,In-Principle Date,Sanction Amount,Sanction Date,Disbursement Amount,Disbursement Date,Status Date,Sanction Created Date,Disbursement Created Date,Closed Date
+L001,Agri,RRB,Sample Bank,Sample Head Office,Sample Branch,Sample PACS,State1,1000000,2024-01-15,900000,2024-01-20,800000,2024-01-25,2024-01-30,2024-01-21,2024-01-26,
+L002,Agri,RRB,Sample Bank,Sample Head Office,Sample Branch,Sample PACS,State1,1500000,2024-02-10,1400000,2024-02-14,1200000,2024-02-18,2024-02-22,2024-02-15,2024-02-19,

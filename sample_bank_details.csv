@@ -1,0 +1,3 @@
+BankId,BankName,EntityName,EntityCode,HirarchyName,BankType,State,City,EmailId,MobileNo,EmployeeName,AccessRight
+1,Sample Bank,Sample Branch,BR001,Branch,RRB,State1,City1,branch@example.com,9000000000,John Doe,user
+2,Sample Bank,Sample Head Office,HO001,Head Office,RRB,State1,City1,headoffice@example.com,9000000001,Jane Smith,admin
