@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+import tempfile
 from pathlib import Path
 from datetime import date
 
@@ -113,9 +114,29 @@ def load_mis(file_bytes):
             ).fillna(0)
     return df
 
-# ── Default bundled sample data ─────────────────────────────────────────────────
+# ── Shared and bundled default datasets ─────────────────────────────────────────
+PERSISTENT_DATA_DIR = Path(tempfile.gettempdir()) / "ekcc_dashboard_data"
+PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_BANK_PATH = PERSISTENT_DATA_DIR / "default_bank_details.csv"
+DEFAULT_MIS_PATH = PERSISTENT_DATA_DIR / "default_mis_data.csv"
+
+def persist_default_dataset(bank_bytes, mis_bytes):
+    DEFAULT_BANK_PATH.write_bytes(bank_bytes)
+    DEFAULT_MIS_PATH.write_bytes(mis_bytes)
+
+@st.cache_data(show_spinner=False)
+def load_persisted_datasets():
+    if DEFAULT_BANK_PATH.exists() and DEFAULT_MIS_PATH.exists():
+        bank_df = load_bank_details(DEFAULT_BANK_PATH.read_bytes())
+        mis_df = load_mis(DEFAULT_MIS_PATH.read_bytes())
+        return bank_df, mis_df
+    return None, None
+
 @st.cache_data(show_spinner=False)
 def load_default_datasets():
+    persisted = load_persisted_datasets()
+    if persisted != (None, None):
+        return persisted
     base = Path(__file__).parent
     bank_path = base / "sample_bank_details.csv"
     mis_path = base / "sample_mis_data.csv"
@@ -137,6 +158,7 @@ with st.sidebar:
     st.markdown("Upload your own Bank and MIS CSV files, or leave both blank to use the bundled sample dataset.")
     bank_file = st.file_uploader("Bank User Details (CSV)", type=["csv"], key="bank_upload")
     mis_file  = st.file_uploader("MIS Loan Data (CSV)",     type=["csv"], key="mis_upload")
+    save_default = st.checkbox("Save this upload as the shared default dataset for all visitors", key="save_default")
 
     if bank_file:
         if (st.session_state.get("bank_uploaded_name") != bank_file.name or
@@ -152,12 +174,16 @@ with st.sidebar:
             # Clear Streamlit cache to force fresh data load
             st.cache_data.clear()
             try:
-                st.session_state.mis_df = load_mis(mis_file.read())
+                mis_bytes = mis_file.read()
+                st.session_state.mis_df = load_mis(mis_bytes)
                 st.session_state.mis_uploaded_name = mis_file.name
                 st.session_state.mis_uploaded_size = getattr(mis_file, "size", None)
                 st.session_state.upload_timestamp = pd.Timestamp.now()
                 for key in ["gf_from", "gf_to", "gf_month", "gf_state", "gf_btype", "gf_bank", "t2_state", "zero_bank_filter", "drill_bank", "drill_region"]:
                     st.session_state.pop(key, None)
+                if save_default and bank_file is not None and st.session_state.bank_df is not None:
+                    persist_default_dataset(st.session_state.bank_df.to_csv(index=False).encode("utf-8"), mis_bytes)
+                    st.success("Saved the uploaded files as the shared default dataset for this deployment.")
                 st.success(f"✓ MIS file loaded fresh at {st.session_state.upload_timestamp.strftime('%H:%M:%S')}: {len(st.session_state.mis_df):,} rows")
             except Exception as e:
                 st.error(f"Error loading MIS file: {str(e)}. Please check the CSV format and ensure no bad lines.")
