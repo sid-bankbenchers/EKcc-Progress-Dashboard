@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -114,11 +115,16 @@ def load_mis(file_bytes):
             ).fillna(0)
     return df
 
-# ── Shared and bundled default datasets ─────────────────────────────────────────
+# ── Shared dataset persistence ─────────────────────────────────────────────────
 PERSISTENT_DATA_DIR = Path(tempfile.gettempdir()) / "ekcc_dashboard_data"
 PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_BANK_PATH = PERSISTENT_DATA_DIR / "default_bank_details.csv"
 DEFAULT_MIS_PATH = PERSISTENT_DATA_DIR / "default_mis_data.csv"
+
+def get_admin_password():
+    if hasattr(st, "secrets") and "admin_password" in st.secrets:
+        return st.secrets["admin_password"]
+    return os.environ.get("ADMIN_PASSWORD", "admin123")
 
 def persist_default_dataset(bank_bytes, mis_bytes):
     DEFAULT_BANK_PATH.write_bytes(bank_bytes)
@@ -133,10 +139,7 @@ def load_persisted_datasets():
     return None, None
 
 @st.cache_data(show_spinner=False)
-def load_default_datasets():
-    persisted = load_persisted_datasets()
-    if persisted != (None, None):
-        return persisted
+def load_sample_datasets():
     base = Path(__file__).parent
     bank_path = base / "sample_bank_details.csv"
     mis_path = base / "sample_mis_data.csv"
@@ -155,35 +158,36 @@ if "mis_df" not in st.session_state:
 # ── Sidebar — UPLOAD ONLY ─────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Upload Data Files")
-    st.markdown("Upload your own Bank and MIS CSV files, or leave both blank to use the bundled sample dataset.")
+    st.markdown("Upload your own Bank and MIS CSV files. If you are an administrator, use the Admin tools section below to save a shared dataset for all visitors.")
     bank_file = st.file_uploader("Bank User Details (CSV)", type=["csv"], key="bank_upload")
     mis_file  = st.file_uploader("MIS Loan Data (CSV)",     type=["csv"], key="mis_upload")
-    save_default = st.checkbox("Save this upload as the shared default dataset for all visitors", key="save_default")
+    bank_bytes = None
+    mis_bytes = None
 
     if bank_file:
+        bank_bytes = bank_file.read()
         if (st.session_state.get("bank_uploaded_name") != bank_file.name or
             st.session_state.get("bank_uploaded_size") != getattr(bank_file, "size", None)):
-            st.session_state.bank_df = load_bank_details(bank_file.read())
+            st.session_state.bank_df = load_bank_details(bank_bytes)
             st.session_state.bank_uploaded_name = bank_file.name
             st.session_state.bank_uploaded_size = getattr(bank_file, "size", None)
+            st.session_state.bank_uploaded_bytes = bank_bytes
         st.success(f"Bank details: {len(st.session_state.bank_df):,} rows")
 
     if mis_file:
+        mis_bytes = mis_file.read()
         if (st.session_state.get("mis_uploaded_name") != mis_file.name or
             st.session_state.get("mis_uploaded_size") != getattr(mis_file, "size", None)):
             # Clear Streamlit cache to force fresh data load
             st.cache_data.clear()
             try:
-                mis_bytes = mis_file.read()
                 st.session_state.mis_df = load_mis(mis_bytes)
                 st.session_state.mis_uploaded_name = mis_file.name
                 st.session_state.mis_uploaded_size = getattr(mis_file, "size", None)
+                st.session_state.mis_uploaded_bytes = mis_bytes
                 st.session_state.upload_timestamp = pd.Timestamp.now()
                 for key in ["gf_from", "gf_to", "gf_month", "gf_state", "gf_btype", "gf_bank", "t2_state", "zero_bank_filter", "drill_bank", "drill_region"]:
                     st.session_state.pop(key, None)
-                if save_default and bank_file is not None and st.session_state.bank_df is not None:
-                    persist_default_dataset(st.session_state.bank_df.to_csv(index=False).encode("utf-8"), mis_bytes)
-                    st.success("Saved the uploaded files as the shared default dataset for this deployment.")
                 st.success(f"✓ MIS file loaded fresh at {st.session_state.upload_timestamp.strftime('%H:%M:%S')}: {len(st.session_state.mis_df):,} rows")
             except Exception as e:
                 st.error(f"Error loading MIS file: {str(e)}. Please check the CSV format and ensure no bad lines.")
@@ -192,17 +196,42 @@ with st.sidebar:
             ts = getattr(st.session_state, 'upload_timestamp', 'unknown')
             st.info(f"Using cached file (loaded at {ts}): {len(st.session_state.mis_df):,} rows. Upload a different file to reload.")
 
+    with st.expander("Admin tools"):
+        admin_password = st.text_input("Admin password", type="password", key="admin_password_input")
+        admin_ok = bool(admin_password and admin_password == get_admin_password())
+        if admin_ok:
+            st.success("Admin access enabled.")
+            if st.button("Save current upload as shared default dataset"):
+                if bank_bytes is None and st.session_state.get("bank_uploaded_bytes") is not None:
+                    bank_bytes = st.session_state.get("bank_uploaded_bytes")
+                if mis_bytes is None and st.session_state.get("mis_uploaded_bytes") is not None:
+                    mis_bytes = st.session_state.get("mis_uploaded_bytes")
+                if bank_bytes is not None and mis_bytes is not None:
+                    persist_default_dataset(bank_bytes, mis_bytes)
+                    st.cache_data.clear()
+                    st.success("Saved the uploaded files as the shared default dataset.")
+                else:
+                    st.warning("Upload both Bank and MIS files before saving a shared default dataset.")
+            if DEFAULT_BANK_PATH.exists() and DEFAULT_MIS_PATH.exists():
+                if st.button("Clear shared default dataset"):
+                    DEFAULT_BANK_PATH.unlink(missing_ok=True)
+                    DEFAULT_MIS_PATH.unlink(missing_ok=True)
+                    st.cache_data.clear()
+                    st.success("Cleared the shared default dataset.")
+        else:
+            st.info("Enter the admin password to save or clear the shared default dataset.")
+
 bank_df = st.session_state.bank_df
 mis_df  = st.session_state.mis_df
 
 if bank_df is None and mis_df is None:
-    default_bank_df, default_mis_df = load_default_datasets()
-    if default_bank_df is not None and default_mis_df is not None:
-        bank_df = default_bank_df
-        mis_df = default_mis_df
+    persisted_bank_df, persisted_mis_df = load_persisted_datasets()
+    if persisted_bank_df is not None and persisted_mis_df is not None:
+        bank_df = persisted_bank_df
+        mis_df = persisted_mis_df
         st.session_state.bank_df = bank_df
         st.session_state.mis_df = mis_df
-        st.info("Loaded bundled sample dataset. Upload your own CSVs in the sidebar to replace it.")
+        st.info("Loaded shared default dataset for all visitors.")
 
 # ── UPLOAD SCREEN ─────────────────────────────────────────────────────────────
 if bank_df is None or mis_df is None:
@@ -210,9 +239,20 @@ if bank_df is None or mis_df is None:
     st.markdown("""
     <div class='info-box'>
     Open the sidebar (arrow top-left) and upload both CSV files to get started.<br><br>
-    <b>File 1:</b> Bank User Details &nbsp;&nbsp; <b>File 2:</b> MIS (Loan Data)
+    <b>File 1:</b> Bank User Details &nbsp;&nbsp; <b>File 2:</b> MIS Loan Data<br><br>
+    If an administrator has saved a shared default dataset, it will load automatically.
     </div>
     """, unsafe_allow_html=True)
+    if st.button("Load demo dataset"):
+        sample_bank_df, sample_mis_df = load_sample_datasets()
+        if sample_bank_df is not None and sample_mis_df is not None:
+            bank_df = sample_bank_df
+            mis_df = sample_mis_df
+            st.session_state.bank_df = bank_df
+            st.session_state.mis_df = mis_df
+            st.success("Loaded demo dataset. Upload your own files in the sidebar to use real data.")
+        else:
+            st.error("Demo dataset is unavailable.")
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Bank User Details columns")

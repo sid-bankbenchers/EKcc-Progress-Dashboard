@@ -10,9 +10,10 @@ This repository contains a Streamlit dashboard for loan progress reporting.
 4. Streamlit Cloud will install dependencies from `requirements.txt`.
 
 > The app now supports a shared default dataset:
-> - visitors can open the app without uploading files by using the bundled demo data
-> - an admin can upload real Bank + MIS CSV files and check the "Save this upload as the shared default dataset" option to make the dataset available for future visitors while the app is running
-> - this is useful for Streamlit Cloud deployments where file uploader state is not shared automatically across sessions
+> - visitors can open the app without uploading files by using the bundled demo dataset or the saved shared dataset
+> - an administrator can upload real Bank + MIS CSV files and save them as the shared default dataset for all visitors
+> - the admin password can be configured with `st.secrets["admin_password"]` or the `ADMIN_PASSWORD` environment variable; the default is `admin123`
+> - this makes the dataset available across visitors while the deployment is running
 
 ## Local run
 
