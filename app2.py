@@ -101,7 +101,6 @@ def load_mis(file_bytes):
                 df[col].astype(str).str.strip(),
                 errors="coerce",
                 dayfirst=False,
-                infer_datetime_format=True
             )
 
     numeric_cols = ["Total Loan Amount", "Sanction Amount", "Disbursement Amount"]
